@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"github.com/filecoin-project/go-fil-markets/pieceio"
 	"io"
 	"os"
 
@@ -409,4 +410,37 @@ func (a *API) ClientQueryAsk(ctx context.Context, p peer.ID, miner address.Addre
 		return nil, err
 	}
 	return signedAsk, nil
+}
+
+func (a *API) ClientCalcCommP(ctx context.Context, path string, miner address.Address) (*api.CommPRet, error) {
+	ssize, err := a.StateMinerSectorSize(ctx, miner, types.EmptyTSK)
+	if err != nil {
+		return nil, xerrors.Errorf("failed checking miners sector size: %w", err)
+	}
+
+	rt, _, err := ffiwrapper.ProofTypeFromSectorSize(ssize)
+	if err != nil {
+		return nil, xerrors.Errorf("bad sector size: %w", err)
+	}
+
+	rdr, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	stat, err := rdr.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	commP, pieceSize, err := pieceio.GeneratePieceCommitment(rt, rdr, uint64(stat.Size()))
+
+	if err != nil {
+		return nil, xerrors.Errorf("computing commP failed: %w", err)
+	}
+
+	return &api.CommPRet{
+		Root: commP,
+		Size: pieceSize,
+	}, nil
 }
