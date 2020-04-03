@@ -112,6 +112,7 @@ type FullNodeStruct struct {
 		ClientRetrieve    func(ctx context.Context, order api.RetrievalOrder, ref api.FileRef) error                           `perm:"admin"`
 		ClientQueryAsk    func(ctx context.Context, p peer.ID, miner address.Address) (*storagemarket.SignedStorageAsk, error) `perm:"read"`
 		ClientCalcCommP   func(ctx context.Context, path string, miner address.Address) (*api.CommPRet, error)                 `perm:"read"`
+		ClientGenCar      func(ctx context.Context, ref api.FileRef, path string) error                                        `perm:"write"`
 
 		StateNetworkName        func(context.Context) (dtypes.NetworkName, error)                                                            `perm:"read"`
 		StateMinerSectors       func(context.Context, address.Address, types.TipSetKey) ([]*api.ChainSectorInfo, error)                      `perm:"read"`
@@ -308,8 +309,13 @@ func (c *FullNodeStruct) ClientRetrieve(ctx context.Context, order api.Retrieval
 func (c *FullNodeStruct) ClientQueryAsk(ctx context.Context, p peer.ID, miner address.Address) (*storagemarket.SignedStorageAsk, error) {
 	return c.Internal.ClientQueryAsk(ctx, p, miner)
 }
+
 func (c *FullNodeStruct) ClientCalcCommP(ctx context.Context, path string, miner address.Address) (*api.CommPRet, error) {
 	return c.Internal.ClientCalcCommP(ctx, path, miner)
+}
+
+func (c *FullNodeStruct) ClientGenCar(ctx context.Context, ref api.FileRef, path string) error {
+	return c.Internal.ClientGenCar(ctx, ref, path)
 }
 
 func (c *FullNodeStruct) MpoolPending(ctx context.Context, tsk types.TipSetKey) ([]*types.SignedMessage, error) {

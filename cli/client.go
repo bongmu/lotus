@@ -32,6 +32,7 @@ var clientCmd = &cli.Command{
 		clientRetrieveCmd,
 		clientQueryAskCmd,
 		clientListDeals,
+		clientCarGenCmd,
 	},
 }
 
@@ -98,6 +99,36 @@ var clientCommPCmd = &cli.Command{
 		}
 		fmt.Println("CID: ", ret.Root)
 		fmt.Println("Piece size: ", ret.Size)
+		return nil
+	},
+}
+
+var clientCarGenCmd = &cli.Command{
+	Name:      "generate-car",
+	Usage:     "generate a car file from input",
+	ArgsUsage: "[inputPath outputPath]",
+	Action: func(cctx *cli.Context) error {
+		api, closer, err := GetFullNodeAPI(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+		ctx := ReqContext(cctx)
+
+		if cctx.Args().Len() != 2 {
+			return fmt.Errorf("usage: generate-car <inputPath> <outputPath>")
+		}
+
+		ref := lapi.FileRef{
+			Path:  cctx.Args().First(),
+			IsCAR: false,
+		}
+
+		op := cctx.Args().Get(1)
+
+		if err = api.ClientGenCar(ctx, ref, op); err != nil {
+			return err
+		}
 		return nil
 	},
 }
