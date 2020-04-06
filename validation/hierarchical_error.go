@@ -25,10 +25,7 @@ type HierarchicalError struct {
 }
 
 func (e *HierarchicalError) Error() string {
-	// return fmt.Sprint(e)
-	return e.msg
-	// FIXME: Using `fmt.Sprint()` overflows the stack, probably because
-	//  I'm using references in the opposite direction.
+	return fmt.Sprint(e)
 }
 
 func (e *HierarchicalError) Format(s fmt.State, v rune) { xerrors.FormatError(e, s, v) }
