@@ -48,7 +48,15 @@ func (e *HierarchicalError) Unwrap() error {
 //  returned (in which case there should be a more automatic way to do it than
 //  adding this call in every returned error).
 func (e *HierarchicalError) WithFrameInfo() error {
-	return &HierarchicalError{parent: e.parent, msg: e.msg, frame: xerrors.Caller(1)}
+	return &HierarchicalError{parent: e.parent, msg: e.msg, frame: GetCallerFrame()}
+}
+
+func (e *HierarchicalError) Child(msg string) *HierarchicalError {
+	return &HierarchicalError{parent: e, msg: msg, frame: xerrors.Frame{}}
+}
+
+func NewHierarchicalError(msg string) *HierarchicalError {
+	return &HierarchicalError{parent: nil, msg: msg, frame: xerrors.Frame{}}
 }
 
 func GetCallerFrame() xerrors.Frame {
@@ -62,9 +70,9 @@ func GetCallerFrame() xerrors.Frame {
 }
 
 func ErrorWrapString(parent error, msg string) *HierarchicalError {
-	return &HierarchicalError{parent: parent, msg: msg, frame: xerrors.Frame{}}
+	return &HierarchicalError{parent: parent, msg: msg, frame: GetCallerFrame()}
 }
 
 func ErrorWrapError(parent error, err error) *HierarchicalError {
-	return &HierarchicalError{parent: parent, msg: err.Error(), frame: xerrors.Frame{}}
+	return &HierarchicalError{parent: parent, msg: err.Error(), frame: GetCallerFrame()}
 }

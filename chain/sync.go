@@ -863,7 +863,7 @@ func (syncer *Syncer) checkBlockMessages(ctx context.Context, b *types.FullBlock
 		}
 
 		if err := sigs.Verify(&m.Signature, kaddr, m.Message.Cid().Bytes()); err != nil {
-			return validation.ErrorWrapString(validation.ErrInvalidSecpkSignature, fmt.Sprintf("%s: %s", err.Error(), m.Cid())).WithFrameInfo()
+			return validation.ErrorWrapString(validation.ErrInvalidSecpkSignature, fmt.Sprintf("%s: %s", err.Error(), m.Cid()))
 		}
 
 		c := cbg.CborCid(m.Cid())
