@@ -3,7 +3,6 @@ package chain
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -443,7 +442,13 @@ func (syncer *Syncer) Sync(ctx context.Context, maybeHead *types.TipSet) error {
 
 // FIXME: Document.
 func isPermanent(err error) bool {
-	return !errors.Is(err, validation.ErrTimestamp)
+	if errorWithClass, ok := err.(validation.ErrorWithClass); ok {
+		return errorWithClass.Class() == validation.ErrTimestamp
+	}
+	// FIXME: Include this in errorWithClass, it could allow us to extend the
+	//  logic and traverse the hierarchy.
+
+	return false
 }
 
 func (syncer *Syncer) ValidateTipSet(ctx context.Context, fts *store.FullTipSet) error {
@@ -510,12 +515,12 @@ func (syncer *Syncer) ValidateBlock(ctx context.Context, b *types.FullBlock) err
 
 	// fast checks first
 	if h.BlockSig == nil {
-		return validation.ErrBlockNilSignature
+		return validation.ErrBlockNilSignature.NewError()
 	}
 
 	maxTimeDrift := time.Now().Add(build.AllowableClockDrift)
 	if h.Timestamp > uint64(maxTimeDrift.Unix()) {
-		return validation.ErrorWrapString(validation.ErrBlockFutureTimestamp, fmt.Sprintf("%s > %s", time.Unix(int64(h.Timestamp), 0).Format("%FT%T"), maxTimeDrift.Format("%FT%T")))
+		return validation.ErrBlockFutureTimestamp.FromString(fmt.Sprintf("%s > %s", time.Unix(int64(h.Timestamp), 0).Format("%FT%T"), maxTimeDrift.Format("%FT%T")))
 		// FIXME: There surely is a simpler way to format these times.
 	}
 	if h.Timestamp > uint64(time.Now().Unix()) {
@@ -526,7 +531,7 @@ func (syncer *Syncer) ValidateBlock(ctx context.Context, b *types.FullBlock) err
 		log.Warn("timestamp funtimes: ", h.Timestamp, baseTs.MinTimestamp(), h.Height, baseTs.Height())
 		diff := (baseTs.MinTimestamp() + (build.BlockDelay * uint64(h.Height-baseTs.Height()))) - h.Timestamp
 
-		return validation.ErrorWrapString(validation.ErrBlockFutureTimestamp, fmt.Sprintf("h.ts:%d < base.mints:%d + BLOCK_DELAY:%d * deltaH:%d; diff %d",
+		return validation.ErrBlockFutureTimestamp.FromString(fmt.Sprintf("h.ts:%d < base.mints:%d + BLOCK_DELAY:%d * deltaH:%d; diff %d",
 			h.Timestamp, baseTs.MinTimestamp(), build.BlockDelay, h.Height-baseTs.Height(), diff))
 	}
 
@@ -537,7 +542,7 @@ func (syncer *Syncer) ValidateBlock(ctx context.Context, b *types.FullBlock) err
 		}
 
 		if slashed {
-			return validation.ErrSlashedMiner
+			return validation.ErrSlashedMiner.NewError()
 		}
 
 		mpow, tpow, err := stmgr.GetPower(ctx, syncer.sm, baseTs, h.Miner)
@@ -553,18 +558,18 @@ func (syncer *Syncer) ValidateBlock(ctx context.Context, b *types.FullBlock) err
 		snum := types.BigDiv(mpow, types.NewInt(uint64(ssize)))
 
 		if len(h.EPostProof.Candidates) == 0 {
-			return validation.ErrNoCandidates
+			return validation.ErrNoCandidates.NewError()
 		}
 
 		wins := make(map[uint64]bool)
 		for _, t := range h.EPostProof.Candidates {
 			if wins[t.ChallengeIndex] {
-				return validation.ErrDuplicateCandidates
+				return validation.ErrDuplicateCandidates.NewError()
 			}
 			wins[t.ChallengeIndex] = true
 
 			if !types.IsTicketWinner(t.Partial, ssize, snum.Uint64(), tpow) {
-				return validation.ErrWinner
+				return validation.ErrWinner.NewError()
 			}
 		}
 		return nil
@@ -579,7 +584,7 @@ func (syncer *Syncer) ValidateBlock(ctx context.Context, b *types.FullBlock) err
 
 	minerCheck := async.Err(func() error {
 		if err := syncer.minerIsValid(ctx, h.Miner, baseTs); err != nil {
-			return validation.ErrorWrapError(validation.ErrMiner, err)
+			return validation.ErrMiner.WrapError(err)
 		}
 		return nil
 	})
@@ -797,7 +802,7 @@ func (syncer *Syncer) checkBlockMessages(ctx context.Context, b *types.FullBlock
 		}
 
 		if err := syncer.verifyBlsAggregate(ctx, b.Header.BLSAggregate, sigCids, pubks); err != nil {
-			return validation.ErrorWrapError(validation.ErrInvalidMessageInBlock, err)
+			return validation.ErrInvalidMessageInBlock.WrapError(err)
 		}
 	}
 
@@ -816,7 +821,7 @@ func (syncer *Syncer) checkBlockMessages(ctx context.Context, b *types.FullBlock
 
 	checkMsg := func(m *types.Message) error {
 		if m.To == address.Undef {
-			return validation.ErrEmptyRecipient
+			return validation.ErrEmptyRecipient.NewError()
 		}
 
 		if _, ok := nonces[m.From]; !ok {
@@ -831,7 +836,7 @@ func (syncer *Syncer) checkBlockMessages(ctx context.Context, b *types.FullBlock
 		}
 
 		if nonces[m.From] != m.Nonce {
-			return validation.ErrorWrapString(validation.ErrWrongNonce, fmt.Sprintf("exp: %d, got: %d", nonces[m.From], m.Nonce))
+			return validation.ErrWrongNonce.FromString(fmt.Sprintf("exp: %d, got: %d", nonces[m.From], m.Nonce))
 		}
 		nonces[m.From]++
 
@@ -842,7 +847,7 @@ func (syncer *Syncer) checkBlockMessages(ctx context.Context, b *types.FullBlock
 
 	for i, m := range b.BlsMessages {
 		if err := checkMsg(m); err != nil {
-			return validation.ErrorWrapString(validation.ErrInvalidMessageInBlock, fmt.Sprintf("invalid bls message at index %d: %s", i, err))
+			return validation.ErrInvalidMessageInBlock.FromString(fmt.Sprintf("invalid bls message at index %d: %s", i, err))
 		}
 
 		c := cbg.CborCid(m.Cid())
@@ -852,7 +857,7 @@ func (syncer *Syncer) checkBlockMessages(ctx context.Context, b *types.FullBlock
 	var secpkCids []cbg.CBORMarshaler
 	for i, m := range b.SecpkMessages {
 		if err := checkMsg(&m.Message); err != nil {
-			return validation.ErrorWrapString(validation.ErrInvalidMessageInBlock, fmt.Sprintf("invalid secpk message at index %d: %s", i, err))
+			return validation.ErrInvalidMessageInBlock.FromString(fmt.Sprintf("invalid secpk message at index %d: %s", i, err))
 		}
 
 		// `From` being an account actor is only validated inside the `vm.ResolveToKeyAddr` call
@@ -863,7 +868,7 @@ func (syncer *Syncer) checkBlockMessages(ctx context.Context, b *types.FullBlock
 		}
 
 		if err := sigs.Verify(&m.Signature, kaddr, m.Message.Cid().Bytes()); err != nil {
-			return validation.ErrorWrapString(validation.ErrInvalidSecpkSignature, fmt.Sprintf("%s: %s", err.Error(), m.Cid()))
+			return validation.ErrInvalidSecpkSignature.FromString(fmt.Sprintf("%s: %s", err.Error(), m.Cid()))
 		}
 
 		c := cbg.CborCid(m.Cid())
@@ -889,7 +894,7 @@ func (syncer *Syncer) checkBlockMessages(ctx context.Context, b *types.FullBlock
 	}
 
 	if b.Header.Messages != mrcid {
-		return validation.ErrInvalidMessagesCID
+		return validation.ErrInvalidMessagesCID.NewError()
 		// FIXME: This is more of a block check than a message check.
 	}
 

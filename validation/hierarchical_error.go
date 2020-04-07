@@ -14,49 +14,64 @@ import (
 // like is a hierarchy of errors where one parent has many possible child errors
 // according to its category. The objective is to programmatically  preserve in
 // the language information liking errors from different contexts.
-// To achieve this, instead of using `xerrors.wrapError` and keep a reference of
-// the child, I define a new struct that references the parent. To keep `xerrors.Is()`
-// semantics valid `Unwrap()` now returns the parent error navigating the chain upwards.
 // FIXME: This is general enough to be outside of this package.
-type HierarchicalError struct {
-	parent error
-	msg    string
-	frame  xerrors.Frame
+type HierarchicalErrorClass struct {
+	parent      *HierarchicalErrorClass
+	description string
 }
 
-func (e *HierarchicalError) Error() string {
+func NewHierarchicalErrorClass(description string) *HierarchicalErrorClass {
+	return &HierarchicalErrorClass{description: description}
+}
+
+func (c *HierarchicalErrorClass) Child(description string) *HierarchicalErrorClass {
+	return &HierarchicalErrorClass{parent: c, description: description}
+}
+
+func (c *HierarchicalErrorClass) NewError() *ErrorWithClass {
+	return &ErrorWithClass{class: c, msg: c.description, frame: GetCallerFrame()}
+}
+
+func (c *HierarchicalErrorClass) FromString(msg string) *ErrorWithClass {
+	return &ErrorWithClass{class: c, msg: msg, frame: GetCallerFrame()}
+}
+
+func (c *HierarchicalErrorClass) WrapError(err error) *ErrorWithClass {
+	return &ErrorWithClass{wrappedError: err, msg: c.description, frame: GetCallerFrame()}
+}
+
+// Copied from `xerrors.wrapError`, includes a `class` attribute information.
+type ErrorWithClass struct {
+	class *HierarchicalErrorClass
+	// FIXME: Should this be a pointer?
+
+	wrappedError error
+	msg          string
+	frame        xerrors.Frame
+	// FIXME: Can be wrapped in the standard `xerrors` way independent of its class?
+}
+
+func (e *ErrorWithClass) Class() *HierarchicalErrorClass {
+	return e.class
+}
+
+// FIXME: Why can't it have a pointer receiver to satisfy the `error` interface?
+//  (`xerrors.wrapError` uses pointer)
+func (e ErrorWithClass) Error() string {
 	return fmt.Sprint(e)
 }
 
-func (e *HierarchicalError) Format(s fmt.State, v rune) { xerrors.FormatError(e, s, v) }
+func (e *ErrorWithClass) Format(s fmt.State, v rune) { xerrors.FormatError(e, s, v) }
 
-func (e *HierarchicalError) FormatError(p xerrors.Printer) (next error) {
+func (e *ErrorWithClass) FormatError(p xerrors.Printer) (next error) {
 	p.Print(e.msg)
+	// FIXME: Maybe include the `class` description here.
 	e.frame.Format(p)
-	return e.parent
-	// FIXME: Again, going in the wrong direction.
+	return e.wrappedError
 }
 
-func (e *HierarchicalError) Unwrap() error {
-	return e.parent
-}
-
-// FIXME: Need to decouple the error itself from its type. Once that is done
-//  we can create duplicate errors with different frame info where the unique
-//  part is the type the error points to within its hierarchy.
-// FIXME: See where we should use this, or if anywhere a `HierarchicalError` is
-//  returned (in which case there should be a more automatic way to do it than
-//  adding this call in every returned error).
-func (e *HierarchicalError) WithFrameInfo() error {
-	return &HierarchicalError{parent: e.parent, msg: e.msg, frame: GetCallerFrame()}
-}
-
-func (e *HierarchicalError) Child(msg string) *HierarchicalError {
-	return &HierarchicalError{parent: e, msg: msg, frame: xerrors.Frame{}}
-}
-
-func NewHierarchicalError(msg string) *HierarchicalError {
-	return &HierarchicalError{parent: nil, msg: msg, frame: xerrors.Frame{}}
+func (e *ErrorWithClass) Unwrap() error {
+	return e.wrappedError
 }
 
 func GetCallerFrame() xerrors.Frame {
@@ -64,15 +79,8 @@ func GetCallerFrame() xerrors.Frame {
 	// if internal.EnableTrace {
 	frame = xerrors.Caller(1)
 	// }
-	// FIXME: Can't reference internal package.
+	// FIXME: Can't reference internal package, if the flag is necessary we can extract
+	//  it from an oracle of `xerrors` behavior (hacky).
 
 	return frame
-}
-
-func ErrorWrapString(parent error, msg string) *HierarchicalError {
-	return &HierarchicalError{parent: parent, msg: msg, frame: GetCallerFrame()}
-}
-
-func ErrorWrapError(parent error, err error) *HierarchicalError {
-	return &HierarchicalError{parent: parent, msg: err.Error(), frame: GetCallerFrame()}
 }
