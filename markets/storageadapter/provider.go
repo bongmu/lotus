@@ -102,7 +102,19 @@ func (n *ProviderNodeAdapter) PublishDeals(ctx context.Context, deal storagemark
 }
 
 func (n *ProviderNodeAdapter) OnDealComplete(ctx context.Context, deal storagemarket.MinerDeal, pieceSize abi.UnpaddedPieceSize, pieceData io.Reader) error {
-	_, err := n.secb.AddPiece(ctx, abi.UnpaddedPieceSize(pieceSize), pieceData, deal.DealID)
+	_, err := n.secb.AddPiece(ctx, abi.UnpaddedPieceSize(pieceSize), pieceData, sealing.PieceWithDealInfo{
+		Piece: abi.PieceInfo{
+			Size:     pieceSize.Padded(),
+			PieceCID: deal.ClientDealProposal.Proposal.PieceCID,
+		},
+		DealInfo: sealing.DealInfo{
+			DealID: deal.DealID,
+			DealSchedule: sealing.DealSchedule{
+				StartEpoch: deal.ClientDealProposal.Proposal.StartEpoch,
+				EndEpoch:   deal.ClientDealProposal.Proposal.EndEpoch,
+			},
+		},
+	})
 	if err != nil {
 		return xerrors.Errorf("AddPiece failed: %s", err)
 	}
